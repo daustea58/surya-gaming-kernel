@@ -63,6 +63,25 @@ export STRIP=llvm-strip
 for tool in ld.lld llvm-ar llvm-nm llvm-objcopy; do
   command -v "$tool" >/dev/null 2>&1 || warn "Expected LLVM tool '$tool' not found in toolchain PATH"
 done
+
+# Some nested Makefiles (e.g. arch/arm64/kernel/vdso32/Makefile) call
+# $(CROSS_COMPILE_ARM32)ld / ...ar / ...nm directly instead of honouring the
+# top-level LD/AR/NM overrides. Shim every GNU-style prefixed name onto the
+# real llvm-* binaries so those calls resolve no matter which prefix they use.
+SHIM_DIR="$WORK_DIR/binutils-shim"
+mkdir -p "$SHIM_DIR"
+for prefix in aarch64-linux-gnu aarch64-linux-android arm-linux-gnueabi arm-linux-androideabi; do
+  ln -sf "$(command -v ld.lld)"        "$SHIM_DIR/${prefix}-ld"
+  ln -sf "$(command -v llvm-ar)"       "$SHIM_DIR/${prefix}-ar"
+  ln -sf "$(command -v llvm-nm)"       "$SHIM_DIR/${prefix}-nm"
+  ln -sf "$(command -v llvm-objcopy)"  "$SHIM_DIR/${prefix}-objcopy"
+  ln -sf "$(command -v llvm-objdump)"  "$SHIM_DIR/${prefix}-objdump"
+  ln -sf "$(command -v llvm-strip)"    "$SHIM_DIR/${prefix}-strip"
+  ln -sf "$(command -v llvm-readelf)"  "$SHIM_DIR/${prefix}-readelf"
+  ln -sf "$(command -v llvm-size)"     "$SHIM_DIR/${prefix}-size"
+done
+export PATH="$SHIM_DIR:$PATH"
+
 log "CROSS_COMPILE=$CROSS_COMPILE  CROSS_COMPILE_ARM32/COMPAT=$CROSS_COMPILE_ARM32  LD=$LD"
 
 # ---------------------------------------------------------------------------
