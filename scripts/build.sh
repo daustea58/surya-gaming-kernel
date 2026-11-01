@@ -38,6 +38,19 @@ if [ ! -d "$TC_DIR/bin" ]; then
 fi
 export PATH="$TC_DIR/bin:$PATH"
 
+log "Toolchain binaries available:"
+ls "$TC_DIR/bin" | grep -iE 'gcc$|clang$' || true
+
+AARCH64_PREFIX="$(find "$TC_DIR/bin" -maxdepth 1 -name '*-gcc' 2>/dev/null | grep -i 'aarch64' | head -1 | xargs -r basename | sed 's/gcc$//')"
+ARM32_PREFIX="$(find "$TC_DIR/bin" -maxdepth 1 -name '*-gcc' 2>/dev/null | grep -iE 'arm-linux|androideabi|arm-eabi' | head -1 | xargs -r basename | sed 's/gcc$//')"
+
+export CC=clang
+export CLANG_TRIPLE="aarch64-linux-gnu-"
+export CROSS_COMPILE="${AARCH64_PREFIX:-aarch64-linux-android-}"
+export CROSS_COMPILE_ARM32="${ARM32_PREFIX:-arm-linux-androideabi-}"
+export CROSS_COMPILE_COMPAT="$CROSS_COMPILE_ARM32"
+log "CROSS_COMPILE=$CROSS_COMPILE  CROSS_COMPILE_ARM32/COMPAT=$CROSS_COMPILE_ARM32"
+
 # ---------------------------------------------------------------------------
 log "Step 3/8: Applying baseline gaming defconfig patch"
 if [ -f "$ROOT_DIR/patches/task1_surya_defconfig.patch" ]; then
@@ -118,8 +131,15 @@ log "defconfig updated at $DEFCONFIG_PATH"
 log "Step 7/8: Building kernel"
 cd "$KERNEL_DIR"
 mkdir -p out
-make O=out ARCH=arm64 "$DEFCONFIG" || die "defconfig generation failed"
-make O=out ARCH=arm64 -j"$(nproc)" 2>&1 | tee "$OUT_DIR/build.log" || die "Kernel build failed, see build.log"
+MAKE_ARGS=(
+  O=out ARCH=arm64 CC=clang
+  CLANG_TRIPLE="$CLANG_TRIPLE"
+  CROSS_COMPILE="$CROSS_COMPILE"
+  CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32"
+  CROSS_COMPILE_COMPAT="$CROSS_COMPILE_COMPAT"
+)
+make "${MAKE_ARGS[@]}" "$DEFCONFIG" || die "defconfig generation failed"
+make "${MAKE_ARGS[@]}" -j"$(nproc)" 2>&1 | tee "$OUT_DIR/build.log" || die "Kernel build failed, see build.log"
 
 IMAGE="out/arch/arm64/boot/Image.gz"
 DTB="out/arch/arm64/boot/dts/qcom/sdmmagpie.dtb"
