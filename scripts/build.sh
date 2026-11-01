@@ -38,28 +38,40 @@ if [ ! -d "$TC_DIR/bin" ]; then
 fi
 export PATH="$TC_DIR/bin:$PATH"
 
-log "Toolchain binaries available:"
-ls "$TC_DIR/bin" | grep -iE 'gcc$|clang$' || true
+log "Full toolchain bin/ listing:"
+ls "$TC_DIR/bin"
 
-AARCH64_PREFIX="$(find "$TC_DIR/bin" -maxdepth 1 -name '*-gcc' 2>/dev/null | grep -i 'aarch64' | head -1 | xargs -r basename | sed 's/gcc$//')"
-ARM32_PREFIX="$(find "$TC_DIR/bin" -maxdepth 1 -name '*-gcc' 2>/dev/null | grep -iE 'arm-linux|androideabi|arm-eabi' | head -1 | xargs -r basename | sed 's/gcc$//')"
-
+# This package is a bare LLVM/Clang toolchain: no prefixed GNU binutils
+# (no aarch64-linux-android-ld etc). Use clang's own llvm-* tools for
+# everything instead of hunting for a GNU cross-binutils that isn't there.
+# CROSS_COMPILE / CROSS_COMPILE_ARM32 only need to be *some* plausible
+# triple string here (used for target selection), real tool dispatch is
+# forced onto the llvm-* binaries via LD/AR/NM/... below.
 export CC=clang
 export CLANG_TRIPLE="aarch64-linux-gnu-"
-export CROSS_COMPILE="${AARCH64_PREFIX:-aarch64-linux-android-}"
-export CROSS_COMPILE_ARM32="${ARM32_PREFIX:-arm-linux-androideabi-}"
+export CROSS_COMPILE="aarch64-linux-gnu-"
+export CROSS_COMPILE_ARM32="arm-linux-gnueabi-"
 export CROSS_COMPILE_COMPAT="$CROSS_COMPILE_ARM32"
-log "CROSS_COMPILE=$CROSS_COMPILE  CROSS_COMPILE_ARM32/COMPAT=$CROSS_COMPILE_ARM32"
+export LD=ld.lld
+export AR=llvm-ar
+export NM=llvm-nm
+export OBJCOPY=llvm-objcopy
+export OBJDUMP=llvm-objdump
+export READELF=llvm-readelf
+export OBJSIZE=llvm-size
+export STRIP=llvm-strip
+for tool in ld.lld llvm-ar llvm-nm llvm-objcopy; do
+  command -v "$tool" >/dev/null 2>&1 || warn "Expected LLVM tool '$tool' not found in toolchain PATH"
+done
+log "CROSS_COMPILE=$CROSS_COMPILE  CROSS_COMPILE_ARM32/COMPAT=$CROSS_COMPILE_ARM32  LD=$LD"
 
 # ---------------------------------------------------------------------------
-log "Step 3/8: Applying baseline gaming defconfig patch"
-if [ -f "$ROOT_DIR/patches/task1_surya_defconfig.patch" ]; then
-  patch -p1 --fuzz=3 --no-backup-if-mismatch < "$ROOT_DIR/patches/task1_surya_defconfig.patch" \
-    && log "Baseline tuning patch applied" \
-    || warn "Baseline tuning patch did not apply cleanly, continuing anyway"
-else
-  warn "No baseline patch found at patches/task1_surya_defconfig.patch, skipping"
-fi
+# NOTE: baseline tuning used to be a line-numbered patch file
+# (patches/task1_surya_defconfig.patch). That file's hunk headers were
+# malformed (bare "@@" with no line numbers) so `patch` always rejected it
+# with "Only garbage was found in the patch input" and it silently never
+# applied. Replaced with direct defconfig appends in Step 6 below, which
+# don't depend on exact line numbers in the upstream file.
 
 # ---------------------------------------------------------------------------
 log "Step 4/8: Integrating KernelSU-Next (non-GKI / legacy kprobe method)"
@@ -106,6 +118,21 @@ DEFCONFIG_PATH="$KERNEL_DIR/arch/arm64/configs/$DEFCONFIG"
 {
   echo ""
   echo "# --- appended by surya-gaming-kernel build.sh ---"
+  echo "# baseline gaming tuning (modules, kprobes, zen I/O sched, schedhorizon gov)"
+  echo "CONFIG_MODULES=y"
+  echo "CONFIG_MODULE_FORCE_LOAD=y"
+  echo "CONFIG_MODULE_UNLOAD=y"
+  echo "CONFIG_MODULE_SIG=n"
+  echo "CONFIG_MODULE_SIG_FORCE=n"
+  echo "CONFIG_MODULE_SIG_ALL=n"
+  echo "CONFIG_KPROBES=y"
+  echo "CONFIG_KPROBE_EVENTS=y"
+  echo "CONFIG_IOSCHED_ZEN=y"
+  echo "CONFIG_DEFAULT_ZEN=y"
+  echo "CONFIG_DEFAULT_IOSCHED=\"zen\""
+  echo "CONFIG_CPU_FREQ_GOV_SCHEDHORIZON=y"
+  echo "CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDHORIZON=y"
+  echo "# root"
   echo "CONFIG_KSU=y"
   if [ "$SUSFS_OK" = "1" ]; then
     echo "CONFIG_KSU_SUSFS=y"
@@ -137,6 +164,8 @@ MAKE_ARGS=(
   CROSS_COMPILE="$CROSS_COMPILE"
   CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32"
   CROSS_COMPILE_COMPAT="$CROSS_COMPILE_COMPAT"
+  LD="$LD" AR="$AR" NM="$NM" OBJCOPY="$OBJCOPY" OBJDUMP="$OBJDUMP"
+  READELF="$READELF" OBJSIZE="$OBJSIZE" STRIP="$STRIP"
 )
 make "${MAKE_ARGS[@]}" "$DEFCONFIG" || die "defconfig generation failed"
 make "${MAKE_ARGS[@]}" -j"$(nproc)" 2>&1 | tee "$OUT_DIR/build.log" || die "Kernel build failed, see build.log"
