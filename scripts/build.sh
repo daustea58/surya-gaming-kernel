@@ -104,11 +104,29 @@ done
 [ -n "$KSU_DIR" ] || die "Could not locate KernelSU-Next source directory after setup"
 log "KernelSU-Next source found at: $KSU_DIR"
 
+# Snapshot the tree right after KSU-Next is integrated, as a local-only git
+# commit. If the SUSFS patches below fail partway, `patch` has already
+# written whatever hunks DID match (even if the overall exit is nonzero),
+# which can silently corrupt unrelated files (e.g. a header included twice).
+# Reverting to this snapshot afterward restores a known-good state without
+# also undoing the KSU-Next integration.
+cd "$KERNEL_DIR"
+git add -A
+git -c user.email=ci@local -c user.name=ci commit -q -m "snapshot: KernelSU-Next integrated" || true
+KSU_SNAPSHOT="$(git rev-parse HEAD)"
+
 # ---------------------------------------------------------------------------
 log "Step 5/8: Integrating SUSFS (root hiding) for kernel 4.14"
 SUSFS_OK=0
 git clone --depth=1 -b kernel-4.14 https://github.com/ShirkNeko/susfs4ksu.git "$SUSFS_DIR" \
   || die "Failed to clone susfs4ksu"
+
+revert_susfs_attempt() {
+  warn "Reverting kernel tree to the post-KSU-Next snapshot (discarding partial SUSFS changes)"
+  cd "$KERNEL_DIR"
+  git checkout -q "$KSU_SNAPSHOT" -- .
+  git clean -fdq
+}
 
 cp "$SUSFS_DIR/kernel_patches/fs/susfs.c" "$KERNEL_DIR/fs/susfs.c" \
   || die "Failed to copy susfs.c"
@@ -117,16 +135,23 @@ cp "$SUSFS_DIR"/kernel_patches/include/linux/susfs*.h "$KERNEL_DIR/include/linux
   || die "Failed to copy susfs headers"
 
 cd "$KERNEL_DIR"
-if patch -p1 --fuzz=5 --no-backup-if-mismatch < "$SUSFS_DIR/kernel_patches/50_add_susfs_in_kernel-4.14.patch"; then
-  log "Core SUSFS kernel patch applied"
-  if patch -p1 --fuzz=5 --no-backup-if-mismatch < "$SUSFS_DIR/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch"; then
-    log "SUSFS<->KernelSU-Next hook patch applied"
+if patch -p1 --fuzz=5 --no-backup-if-mismatch < "$SUSFS_DIR/kernel_patches/50_add_susfs_in_kernel-4.14.patch" \
+   && [ "$(find . -name '*.rej' | wc -l)" = "0" ]; then
+  log "Core SUSFS kernel patch applied cleanly"
+  if patch -p1 --fuzz=5 --no-backup-if-mismatch < "$SUSFS_DIR/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" \
+     && [ "$(find . -name '*.rej' | wc -l)" = "0" ]; then
+    log "SUSFS<->KernelSU-Next hook patch applied cleanly"
     SUSFS_OK=1
   else
-    warn "SUSFS<->KernelSU-Next hook patch had rejects. Root will still work, but SUSFS hiding may be incomplete."
+    warn "SUSFS<->KernelSU-Next hook patch had rejects."
+    revert_susfs_attempt
   fi
 else
-  warn "Core SUSFS patch had rejects against this kernel tree. Continuing WITHOUT SUSFS (root will still work via KernelSU-Next, but without hiding)."
+  warn "Core SUSFS patch had rejects against this kernel tree."
+  revert_susfs_attempt
+fi
+if [ "$SUSFS_OK" != "1" ]; then
+  warn "Continuing WITHOUT SUSFS (root via KernelSU-Next still works, but root hiding is not included in this build)."
 fi
 
 # ---------------------------------------------------------------------------
