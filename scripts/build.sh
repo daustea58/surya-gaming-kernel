@@ -189,6 +189,7 @@ DEFCONFIG_PATH="$KERNEL_DIR/arch/arm64/configs/$DEFCONFIG"
     # patches (50_add_susfs_in_kernel-4.14.patch + KernelSU/10_enable_susfs_for_ksu.patch),
     # verified against the patches themselves, not guessed.
     echo "CONFIG_KSU_SUSFS=y"
+    echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y"
     echo "CONFIG_KSU_SUSFS_SUS_PATH=y"
     echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y"
     echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y"
