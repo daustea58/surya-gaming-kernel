@@ -93,8 +93,14 @@ log "CROSS_COMPILE=$CROSS_COMPILE  CROSS_COMPILE_ARM32/COMPAT=$CROSS_COMPILE_ARM
 # don't depend on exact line numbers in the upstream file.
 
 # ---------------------------------------------------------------------------
-log "Step 4/8: Integrating KernelSU-Next (non-GKI / legacy kprobe method)"
-curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy \
+# Pinned to a specific commit on KernelSU-Next's `legacy` branch (the branch
+# dedicated to non-GKI/kprobe integration) instead of always re-resolving
+# `next` HEAD at build time. This keeps builds reproducible; bump
+# KSU_NEXT_REF manually when you want to pick up newer legacy-branch commits.
+# (Checked 2026-11-02: HEAD of `legacy` was b933b1f728116a456fbebf27b6a8772a640cdf23.)
+KSU_NEXT_REF="b933b1f728116a456fbebf27b6a8772a640cdf23"
+log "Step 4/8: Integrating KernelSU-Next (non-GKI / legacy kprobe method), pinned to $KSU_NEXT_REF"
+curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s "$KSU_NEXT_REF" \
   || die "KernelSU-Next setup script failed"
 
 KSU_DIR=""
@@ -179,18 +185,21 @@ DEFCONFIG_PATH="$KERNEL_DIR/arch/arm64/configs/$DEFCONFIG"
   echo "# root"
   echo "CONFIG_KSU=y"
   if [ "$SUSFS_OK" = "1" ]; then
+    # Full option set actually present in susfs4ksu kernel-4.14's
+    # 50_add_susfs_in_kernel-4.14.patch (verified against the patch itself,
+    # not guessed) - every one of these is wired up and should work.
     echo "CONFIG_KSU_SUSFS=y"
-    echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y"
     echo "CONFIG_KSU_SUSFS_SUS_PATH=y"
     echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y"
     echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y"
-    echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n"
     echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y"
     echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y"
+    echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y"
+    echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y"
     echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y"
-    echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y"
     echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y"
     echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y"
+    echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y"
   fi
   echo "# gaming/perf extras"
   echo "CONFIG_CPU_FREQ_GOV_PERFORMANCE=y"
