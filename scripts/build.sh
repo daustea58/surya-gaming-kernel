@@ -185,17 +185,19 @@ DEFCONFIG_PATH="$KERNEL_DIR/arch/arm64/configs/$DEFCONFIG"
   echo "# root"
   echo "CONFIG_KSU=y"
   if [ "$SUSFS_OK" = "1" ]; then
-    # Full option set actually present in susfs4ksu kernel-4.14's
-    # 50_add_susfs_in_kernel-4.14.patch (verified against the patch itself,
-    # not guessed) - every one of these is wired up and should work.
+    # Full option set actually present across both susfs4ksu kernel-4.14
+    # patches (50_add_susfs_in_kernel-4.14.patch + KernelSU/10_enable_susfs_for_ksu.patch),
+    # verified against the patches themselves, not guessed.
     echo "CONFIG_KSU_SUSFS=y"
     echo "CONFIG_KSU_SUSFS_SUS_PATH=y"
     echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y"
     echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y"
+    echo "CONFIG_KSU_SUSFS_SUS_SU=y"
     echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y"
     echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y"
     echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y"
     echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y"
+    echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y"
     echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y"
     echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y"
     echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y"
